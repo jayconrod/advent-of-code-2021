@@ -11,6 +11,8 @@ fn main() {
     let func = match name.as_str() {
         "1_1" => puzzle1_1,
         "1_2" => puzzle1_2,
+        "2_1" => puzzle2_1,
+        "2_2" => puzzle2_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -59,4 +61,52 @@ fn puzzle1_2(input: &str) {
         i += 1;
     }
     println!("depth increases: {}", increases);
+}
+
+fn puzzle2_1(input: &str) {
+    let mut hpos = 0;
+    let mut depth = 0;
+    for line in input.lines() {
+        let words: Vec<&str> = line.split_ascii_whitespace().collect();
+        if words.len() == 0 {
+            continue;
+        }
+        if words.len() != 2 {
+            panic!("expected exactly 2 words in command");
+        }
+        let dist = words[1].parse::<i64>().expect("distance must be integer");
+        match words[0] {
+            "forward" => hpos += dist,
+            "down" => depth += dist,
+            "up" => depth -= dist,
+            _ => panic!("unknown command {}", words[0]),
+        }
+    }
+    println!("hpos {}, depth {}, product {}", hpos, depth, hpos * depth);
+}
+
+fn puzzle2_2(input: &str) {
+    let mut hpos = 0;
+    let mut depth = 0;
+    let mut aim = 0;
+    for line in input.lines() {
+        let words: Vec<&str> = line.split_ascii_whitespace().collect();
+        if words.len() == 0 {
+            continue;
+        }
+        if words.len() != 2 {
+            panic!("expected exactly 2 words in command");
+        }
+        let n = words[1].parse::<i64>().expect("argument must be integer");
+        match words[0] {
+            "down" => aim += n,
+            "up" => aim -= n,
+            "forward" => {
+                hpos += n;
+                depth += aim * n;
+            }
+            _ => panic!("unknown command {}", words[0]),
+        }
+    }
+    println!("hpos {}, depth {}, product {}", hpos, depth, hpos * depth);
 }
