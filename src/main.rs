@@ -13,6 +13,8 @@ fn main() {
         "1_2" => puzzle1_2,
         "2_1" => puzzle2_1,
         "2_2" => puzzle2_2,
+        "3_1" => puzzle3_1,
+        "3_2" => puzzle3_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -109,4 +111,105 @@ fn puzzle2_2(input: &str) {
         }
     }
     println!("hpos {}, depth {}, product {}", hpos, depth, hpos * depth);
+}
+
+fn puzzle3_1(input: &str) {
+    let (values, width) = puzzle3_parse_input(input).unwrap();
+    let gamma_rate = puzzle3_most_common_bits(&values[..], width);
+    let mask = (1 << width) - 1;
+    let epsilon_rate = gamma_rate ^ mask;
+    let power = gamma_rate * epsilon_rate;
+    println!(
+        "gamma_rate {}, epsilon_rate {}, power {}",
+        gamma_rate, epsilon_rate, power,
+    );
+}
+
+fn puzzle3_2(input: &str) {
+    let (values, width) = puzzle3_parse_input(input).unwrap();
+    let mut o2_generator_candidates = values.clone();
+    for i in 0..width {
+        let most_common = puzzle3_most_common_bits(&o2_generator_candidates[..], width);
+        let mask = 1 << (width - i - 1);
+        o2_generator_candidates = o2_generator_candidates
+            .iter()
+            .map(|v| *v)
+            .filter(|v| ((*v ^ most_common) & mask) == 0)
+            .collect();
+        if o2_generator_candidates.len() <= 1 {
+            break;
+        }
+    }
+    if o2_generator_candidates.len() != 1 {
+        panic!("did not find exactly one O2 generator candidate")
+    }
+    let o2_generator_rating = o2_generator_candidates[0];
+
+    let mut co2_scrubber_candidates = values;
+    for i in 0..width {
+        let most_common = puzzle3_most_common_bits(&co2_scrubber_candidates[..], width);
+        let least_common = most_common ^ ((1 << width) - 1);
+        let mask = 1 << (width - i - 1);
+        co2_scrubber_candidates = co2_scrubber_candidates
+            .iter()
+            .map(|v| *v)
+            .filter(|v| ((*v ^ least_common) & mask) == 0)
+            .collect();
+        if co2_scrubber_candidates.len() <= 1 {
+            break;
+        }
+    }
+    if co2_scrubber_candidates.len() != 1 {
+        panic!("did not find exactly one CO2 scrubber candidate")
+    }
+    let co2_scrubber_rating = co2_scrubber_candidates[0];
+
+    let life_support_rating = o2_generator_rating * co2_scrubber_rating;
+    println!(
+        "o2 generator rating {}, co2 scrubber rating {}, life support rating {}",
+        o2_generator_rating, co2_scrubber_rating, life_support_rating
+    );
+}
+
+fn puzzle3_parse_input(input: &str) -> Result<(Vec<usize>, usize), String> {
+    let mut values: Vec<usize> = Vec::new();
+    let mut width = 0;
+    for (i, line) in input.lines().enumerate() {
+        if line.len() == 0 {
+            continue;
+        }
+        if width == 0 {
+            width = line.len()
+        } else if width != line.len() {
+            return Err(format!(
+                "line {}: different length {} than earlier lines {}",
+                i,
+                line.len(),
+                width
+            ));
+        }
+        values.push(usize::from_str_radix(line, 2).map_err(|e| e.to_string())?);
+    }
+    Ok((values, width))
+}
+
+fn puzzle3_most_common_bits(values: &[usize], width: usize) -> usize {
+    let mut counts = Vec::new();
+    counts.resize(width, 0);
+    for value in values {
+        for i in 0..width {
+            if (value & (1 << (width - i - 1))) != 0 {
+                counts[i] += 1;
+            }
+        }
+    }
+
+    let mut most_common = 0;
+    let half = (values.len() + 1) / 2;
+    for (i, count) in counts.iter().enumerate() {
+        if *count >= half {
+            most_common |= 1 << (width - i - 1);
+        }
+    }
+    most_common
 }
