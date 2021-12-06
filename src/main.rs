@@ -1,7 +1,9 @@
 use std::env;
 use std::fmt;
+use std::fmt::Display;
 use std::fs;
 use std::process;
+use std::str::FromStr;
 
 fn main() {
     if env::args().len() != 2 {
@@ -20,6 +22,8 @@ fn main() {
         "4_2" => puzzle4_2,
         "5_1" => puzzle5_1,
         "5_2" => puzzle5_2,
+        "6_1" => puzzle6_1,
+        "6_2" => puzzle6_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -261,7 +265,7 @@ fn puzzle4_parse_input(input: &str) -> Result<Puzzle4Input, String> {
     let numbers = lines
         .next()
         .ok_or(String::from("numbers line not found"))
-        .and_then(parse_comma_separated_line_of_numbers)?;
+        .and_then(|s| parse_separated::<i64>(s, ","))?;
 
     let mut boards = Vec::<BingoBoard>::new();
     'board_loop: loop {
@@ -282,7 +286,7 @@ fn puzzle4_parse_input(input: &str) -> Result<Puzzle4Input, String> {
                 }
                 Some(line) => line,
             };
-            let square_numbers = parse_space_separated_line_of_numbers(line)?;
+            let square_numbers = parse_space_separated::<i64>(line)?;
             if square_numbers.len() != 5 {
                 return Err(String::from("bingo row must contain 5 numbers"));
             }
@@ -335,18 +339,6 @@ impl BingoBoard {
         }
         Some(unmarked_sum * n)
     }
-}
-
-fn parse_space_separated_line_of_numbers(line: &str) -> Result<Vec<i64>, String> {
-    line.split_ascii_whitespace()
-        .map(|w| w.parse::<i64>().map_err(|err| format!("{}", err)))
-        .collect()
-}
-
-fn parse_comma_separated_line_of_numbers(line: &str) -> Result<Vec<i64>, String> {
-    line.split(",")
-        .map(|w| w.parse::<i64>().map_err(|err| format!("{}", err)))
-        .collect()
 }
 
 fn puzzle5_1(input: &str) {
@@ -549,4 +541,98 @@ impl fmt::Display for FloorMap {
         }
         f.write_str(s.as_str())
     }
+}
+
+fn puzzle6_1(input: &str) {
+    let mut lanternfish = input.trim().parse::<Lanternfish>().unwrap();
+    let days = 80;
+    for _ in 0..days {
+        lanternfish.advance();
+    }
+    println!(
+        "population after {} days: {}",
+        days,
+        lanternfish.population()
+    );
+}
+
+fn puzzle6_2(input: &str) {
+    let mut lanternfish = input.trim().parse::<Lanternfish>().unwrap();
+    let days = 256;
+    for _ in 0..days {
+        lanternfish.advance();
+    }
+    println!(
+        "population after {} days: {}",
+        days,
+        lanternfish.population()
+    );
+}
+
+struct Lanternfish {
+    count_days_until_spawn: Vec<usize>,
+}
+
+impl Lanternfish {
+    fn population(&self) -> usize {
+        self.count_days_until_spawn
+            .iter()
+            .fold(0, |sum, n| sum.checked_add(*n).unwrap())
+    }
+
+    fn advance(&mut self) {
+        let spawned = self.count_days_until_spawn[0];
+        for i in 0..self.count_days_until_spawn.len() - 1 {
+            self.count_days_until_spawn[i] = self.count_days_until_spawn[i + 1]
+        }
+        self.count_days_until_spawn[6] += spawned;
+        self.count_days_until_spawn[8] = spawned;
+    }
+}
+
+impl FromStr for Lanternfish {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut count_days_until_spawn = Vec::<usize>::new();
+        count_days_until_spawn.resize(9, 0);
+        for days_until_spawn in parse_separated::<usize>(s, ",")? {
+            if days_until_spawn >= count_days_until_spawn.len() {
+                return Err(format!("invalid days until spawn: {}", days_until_spawn));
+            }
+            count_days_until_spawn[days_until_spawn] += 1;
+        }
+        Ok(Lanternfish {
+            count_days_until_spawn: count_days_until_spawn,
+        })
+    }
+}
+
+impl Display for Lanternfish {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut sep = "";
+        for n in &self.count_days_until_spawn {
+            write!(f, "{}{}", sep, n)?;
+            sep = ",";
+        }
+        Ok(())
+    }
+}
+
+fn parse_space_separated<T: std::str::FromStr>(s: &str) -> Result<Vec<T>, String> {
+    s.split_ascii_whitespace()
+        .map(|w| {
+            w.parse::<T>()
+                .map_err(|_| String::from("expected space-separated list"))
+        })
+        .collect()
+}
+
+fn parse_separated<T: std::str::FromStr>(s: &str, sep: &str) -> Result<Vec<T>, String> {
+    s.split(sep)
+        .map(|w| {
+            w.parse::<T>()
+                .map_err(|_| String::from("expected separated list"))
+        })
+        .collect()
 }
