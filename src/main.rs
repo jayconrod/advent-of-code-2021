@@ -24,6 +24,8 @@ fn main() {
         "5_2" => puzzle5_2,
         "6_1" => puzzle6_1,
         "6_2" => puzzle6_2,
+        "7_1" => puzzle7_1,
+        "7_2" => puzzle7_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -617,6 +619,42 @@ impl Display for Lanternfish {
         }
         Ok(())
     }
+}
+
+fn puzzle7_1(input: &str) {
+    let positions = parse_separated::<i64>(input.trim(), ",").unwrap();
+    let min = *positions.iter().min().unwrap();
+    let max = *positions.iter().max().unwrap();
+    let total_distance = |pos: i64| positions.iter().fold(0, |dist, p| dist + (*p - pos).abs());
+    let (min_pos, min_total_distance) = (min..=max)
+        .map(|pos| (pos, total_distance(pos)))
+        .min_by(|(_, d1), (_, d2)| d1.cmp(d2))
+        .unwrap();
+
+    println!(
+        "min_pos {}, min_total_distance {}",
+        min_pos, min_total_distance
+    );
+}
+
+fn puzzle7_2(input: &str) {
+    let positions = parse_separated::<i64>(input.trim(), ",").unwrap();
+    let min = *positions.iter().min().unwrap();
+    let max = *positions.iter().max().unwrap();
+    let distance = |x: i64, y: i64| {
+        let d = (x - y).abs();
+        d * (d + 1) / 2
+    };
+    let total_distance = |pos: i64| positions.iter().fold(0, |dist, p| dist + distance(*p, pos));
+    let (min_pos, min_total_distance) = (min..=max)
+        .map(|pos| (pos, total_distance(pos)))
+        .min_by(|(_, d1), (_, d2)| d1.cmp(d2))
+        .unwrap();
+
+    println!(
+        "min_pos {}, min_total_distance {}",
+        min_pos, min_total_distance
+    );
 }
 
 fn parse_space_separated<T: std::str::FromStr>(s: &str) -> Result<Vec<T>, String> {
