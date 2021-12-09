@@ -26,6 +26,8 @@ fn main() {
         "6_2" => puzzle6_2,
         "7_1" => puzzle7_1,
         "7_2" => puzzle7_2,
+        "8_1" => puzzle8_1,
+        "8_2" => puzzle8_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -655,6 +657,180 @@ fn puzzle7_2(input: &str) {
         "min_pos {}, min_total_distance {}",
         min_pos, min_total_distance
     );
+}
+
+fn puzzle8_1(input: &str) {
+    let entries = parse_puzzle8(input).unwrap();
+    let easy_count = entries
+        .iter()
+        .flat_map(|e| e.output.iter())
+        .filter(|d| d.is_easy())
+        .count();
+    println!("easy_count {}", easy_count);
+}
+
+fn puzzle8_2(input: &str) {
+    let entries = parse_puzzle8(input).unwrap();
+    let output_sum: u64 = entries.iter().map(|e| e.decode()).sum();
+    println!("output_sum {}", output_sum);
+}
+
+fn parse_puzzle8(input: &str) -> Result<Vec<Puzzle8Entry>, String> {
+    input
+        .trim()
+        .lines()
+        .map(|l| l.parse::<Puzzle8Entry>())
+        .collect()
+}
+
+struct Puzzle8Entry {
+    unique: Vec<Digit>,
+    output: Vec<Digit>,
+}
+
+impl Puzzle8Entry {
+    fn decode(&self) -> u64 {
+        let mut pattern_to_digit = [0u8; 128];
+        let mut digit_to_pattern = [0u8; 10];
+
+        // First pass: "1", "4", "7", "8".
+        let mut found = 0;
+        for pattern in self.unique.iter() {
+            let digit = match pattern.bits.count_ones() {
+                2 => 1u8,
+                4 => 4u8,
+                3 => 7u8,
+                7 => 8u8,
+                _ => continue,
+            };
+            pattern_to_digit[pattern.bits as usize] = digit;
+            digit_to_pattern[digit as usize] = pattern.bits;
+            found += 1;
+        }
+        assert_eq!(found, 4);
+
+        // Second pass: "2", "3", "5".
+        for pattern in self.unique.iter() {
+            if pattern.bits.count_ones() != 5 {
+                continue;
+            }
+            let common_with_one = (pattern.bits & digit_to_pattern[1]).count_ones();
+            let common_with_four_not_one =
+                (pattern.bits & digit_to_pattern[4] & !digit_to_pattern[1]).count_ones();
+            let digit = if common_with_one == 2 {
+                3u8
+            } else if common_with_four_not_one == 2 {
+                5u8
+            } else {
+                2u8
+            };
+            pattern_to_digit[pattern.bits as usize] = digit;
+            digit_to_pattern[digit as usize] = pattern.bits;
+            found += 1;
+        }
+        assert_eq!(found, 7);
+
+        // Third pass: "6", "9", "0".
+        for pattern in self.unique.iter() {
+            if pattern.bits.count_ones() != 6 {
+                continue;
+            }
+            let digit = if (pattern.bits & digit_to_pattern[4]).count_ones() == 4 {
+                9u8
+            } else if (pattern.bits & digit_to_pattern[1]).count_ones() == 2 {
+                0u8
+            } else {
+                6u8
+            };
+            pattern_to_digit[pattern.bits as usize] = digit;
+            digit_to_pattern[digit as usize] = pattern.bits;
+            found += 1;
+        }
+        assert_eq!(found, 10);
+
+        let mut output = 0;
+        for pattern in &self.output {
+            output = output * 10 + pattern_to_digit[pattern.bits as usize] as u64;
+        }
+        output
+    }
+}
+
+impl FromStr for Puzzle8Entry {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let words: Vec<&str> = s.split_ascii_whitespace().collect();
+        if words.len() != 15 {
+            return Err(String::from("line must have 15 words"));
+        }
+        if words[10] != "|" {
+            return Err(String::from("word 10 must be '|' delimiter"));
+        }
+        let unique: Result<Vec<Digit>, Self::Err> =
+            words[0..10].iter().map(|w| w.parse::<Digit>()).collect();
+        let output: Result<Vec<Digit>, Self::Err> =
+            words[11..15].iter().map(|w| w.parse::<Digit>()).collect();
+        Ok(Puzzle8Entry {
+            unique: unique?,
+            output: output?,
+        })
+    }
+}
+
+impl Display for Puzzle8Entry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut sep = "";
+        for d in &self.unique {
+            write!(f, "{}{}", sep, d)?;
+            sep = " ";
+        }
+        f.write_str(" |")?;
+        for d in &self.output {
+            write!(f, "{}{}", sep, d)?;
+        }
+        Ok(())
+    }
+}
+
+struct Digit {
+    bits: u8,
+}
+
+impl Digit {
+    fn is_easy(&self) -> bool {
+        match self.bits.count_ones() {
+            2 | 3 | 4 | 7 => true,
+            _ => false,
+        }
+    }
+}
+
+impl FromStr for Digit {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut n = 0;
+        for c in s.chars() {
+            if c < 'a' || 'g' < c {
+                return Err(String::from("pattern may only contain letters a-g"));
+            }
+            n |= 1 << (c as u8 - 'a' as u8);
+        }
+        Ok(Digit { bits: n })
+    }
+}
+
+impl Display for Digit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut s = String::new();
+        for i in 0..8 {
+            if self.bits & (1 << i) != 0 {
+                s.push((b'a' + i) as char);
+            }
+        }
+        f.write_str(&s[..])
+    }
 }
 
 fn parse_space_separated<T: std::str::FromStr>(s: &str) -> Result<Vec<T>, String> {
