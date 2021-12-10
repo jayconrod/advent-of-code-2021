@@ -28,6 +28,8 @@ fn main() {
         "7_2" => puzzle7_2,
         "8_1" => puzzle8_1,
         "8_2" => puzzle8_2,
+        "9_1" => puzzle9_1,
+        "9_2" => puzzle9_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -830,6 +832,189 @@ impl Display for Digit {
             }
         }
         f.write_str(&s[..])
+    }
+}
+
+fn puzzle9_1(input: &str) {
+    let hm = input.parse::<HeightMap>().unwrap();
+    let total_risk: u64 = hm.iter_low_points().map(|(x, y)| 1 + hm.at(x, y)).sum();
+    println!("total_risk {}", total_risk);
+}
+
+fn puzzle9_2(input: &str) {
+    let hm = input.parse::<HeightMap>().unwrap();
+    let basins = hm.basins();
+    let mut basin_sizes = Vec::<u64>::new();
+    for bid in basins {
+        if bid == 0 {
+            continue;
+        }
+        let i = bid as usize;
+        if basin_sizes.len() <= i {
+            basin_sizes.resize(i + 1, 0);
+        }
+        basin_sizes[i] += 1;
+    }
+    basin_sizes.sort();
+    let product_of_largest: u64 = basin_sizes[basin_sizes.len() - 3..].iter().product();
+    println!("product_of_largest {}", product_of_largest);
+}
+
+struct HeightMap {
+    size_x: usize,
+    size_y: usize,
+    heights: Vec<u64>,
+}
+
+impl HeightMap {
+    fn at(&self, x: usize, y: usize) -> u64 {
+        assert!(x < self.size_x);
+        assert!(y < self.size_y);
+        self.heights[y * self.size_x + x]
+    }
+
+    fn is_low_point(&self, x: usize, y: usize) -> bool {
+        let h = self.at(x, y);
+        let top = y == 0;
+        let left = x == 0;
+        let bottom = y == self.size_y - 1;
+        let right = x == self.size_x - 1;
+        if top && left {
+            h < self.at(x, y + 1) && h < self.at(x + 1, y)
+        } else if top && right {
+            h < self.at(x, y + 1) && h < self.at(x - 1, y)
+        } else if bottom && right {
+            h < self.at(x, y - 1) && h < self.at(x - 1, y)
+        } else if bottom && left {
+            h < self.at(x, y - 1) && h < self.at(x + 1, y)
+        } else if top {
+            h < self.at(x - 1, y) && h < self.at(x, y + 1) && h < self.at(x + 1, y)
+        } else if left {
+            h < self.at(x, y - 1) && h < self.at(x, y + 1) && h < self.at(x + 1, y)
+        } else if bottom {
+            h < self.at(x, y - 1) && h < self.at(x - 1, y) && h < self.at(x + 1, y)
+        } else if right {
+            h < self.at(x, y - 1) && h < self.at(x - 1, y) && h < self.at(x, y + 1)
+        } else {
+            h < self.at(x, y - 1)
+                && h < self.at(x - 1, y)
+                && h < self.at(x, y + 1)
+                && h < self.at(x + 1, y)
+        }
+    }
+
+    fn iter_low_points(&self) -> HeightMapLowPointIterator {
+        HeightMapLowPointIterator { hm: self, index: 0 }
+    }
+
+    fn basins(&self) -> Vec<u64> {
+        let mut bs = Vec::<u64>::new();
+        bs.resize(self.heights.len(), 0);
+        let mut next_bid: u64 = 1;
+        fn find_basin(
+            hm: &HeightMap,
+            bs: &mut Vec<u64>,
+            next_bid: &mut u64,
+            x: usize,
+            y: usize,
+        ) -> u64 {
+            let i = y * hm.size_x + x;
+            if bs[i] != 0 {
+                // Basin already found for this point.
+                return bs[i];
+            }
+            if hm.at(x, y) == 9 {
+                // High point, not in a basin.
+                return 0;
+            }
+            if hm.is_low_point(x, y) {
+                // Bottom of new basin.
+                bs[i] = *next_bid;
+                *next_bid += 1;
+                return bs[i];
+            }
+
+            // Recurse in lowest direction.
+            let h = hm.at(x, y);
+            let th = if y > 0 { hm.at(x, y - 1) } else { 9 };
+            let lh = if x > 0 { hm.at(x - 1, y) } else { 9 };
+            let bh = if y < hm.size_y - 1 {
+                hm.at(x, y + 1)
+            } else {
+                9
+            };
+            let rh = if x < hm.size_x - 1 {
+                hm.at(x + 1, y)
+            } else {
+                9
+            };
+            let (flow_x, flow_y) = if th < h && th <= lh && th <= bh && th <= rh {
+                (x, y - 1)
+            } else if lh < h && lh <= th && lh <= bh && lh <= rh {
+                (x - 1, y)
+            } else if bh < h && bh <= th && bh <= lh && bh <= rh {
+                (x, y + 1)
+            } else if rh < h && rh <= th && rh <= lh && rh <= bh {
+                (x + 1, y)
+            } else {
+                panic!("flat point");
+            };
+            bs[i] = find_basin(hm, bs, next_bid, flow_x, flow_y);
+            bs[i]
+        }
+
+        for y in 0..self.size_y {
+            for x in 0..self.size_x {
+                find_basin(self, &mut bs, &mut next_bid, x, y);
+            }
+        }
+        bs
+    }
+}
+
+struct HeightMapLowPointIterator<'a> {
+    hm: &'a HeightMap,
+    index: usize,
+}
+
+impl<'a> Iterator for HeightMapLowPointIterator<'a> {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.hm.size_x * self.hm.size_y {
+            let x = self.index % self.hm.size_x;
+            let y = self.index / self.hm.size_x;
+            self.index += 1;
+            if self.hm.is_low_point(x, y) {
+                return Some((x, y));
+            }
+        }
+        None
+    }
+}
+
+impl FromStr for HeightMap {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut hm = HeightMap {
+            size_x: 0,
+            size_y: 0,
+            heights: Vec::<u64>::new(),
+        };
+        for line in s.trim().lines() {
+            if hm.size_x == 0 {
+                hm.size_x = line.len();
+            }
+            hm.size_y += 1;
+            for c in line.chars() {
+                if c < '0' || '9' < c {
+                    return Err(format!("invalid heighmap height: {}", c));
+                }
+                hm.heights.push(c as u64 - '0' as u64)
+            }
+        }
+        Ok(hm)
     }
 }
 
