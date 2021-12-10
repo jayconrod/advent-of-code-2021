@@ -1,4 +1,5 @@
 use std::env;
+use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
 use std::fs;
@@ -30,6 +31,8 @@ fn main() {
         "8_2" => puzzle8_2,
         "9_1" => puzzle9_1,
         "9_2" => puzzle9_2,
+        "10_1" => puzzle10_1,
+        "10_2" => puzzle10_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -1015,6 +1018,112 @@ impl FromStr for HeightMap {
             }
         }
         Ok(hm)
+    }
+}
+
+fn puzzle10_1(input: &str) {
+    let err_score = |chunks: Result<Vec<char>, ChunkParseError>| {
+        if let Err(err) = chunks {
+            match err.got {
+                ')' => 3,
+                ']' => 57,
+                '}' => 1197,
+                '>' => 25137,
+                _ => 0,
+            }
+        } else {
+            0
+        }
+    };
+    let total_score: usize = input
+        .trim()
+        .lines()
+        .enumerate()
+        .map(|(n, line)| parse_chunks(n, line))
+        .map(err_score)
+        .sum();
+    println!("total_score {}", total_score);
+}
+
+fn puzzle10_2(input: &str) {
+    let complete_score = |chunks: Result<Vec<char>, ChunkParseError>| {
+        let char_score = |c| match c {
+            ')' => 1,
+            ']' => 2,
+            '}' => 3,
+            '>' => 4,
+            _ => 0,
+        };
+        match chunks {
+            Ok(cs) => Some(cs.iter().fold(0, |total, &c| 5 * total + char_score(c))),
+            _ => None,
+        }
+    };
+    let mut scores: Vec<usize> = input
+        .trim()
+        .lines()
+        .enumerate()
+        .map(|(n, line)| parse_chunks(n, line))
+        .filter_map(complete_score)
+        .collect();
+    scores.sort();
+    let median_score = scores[scores.len() / 2];
+    println!("median_score {}", median_score);
+}
+
+fn parse_chunks(lineno: usize, s: &str) -> Result<Vec<char>, ChunkParseError> {
+    let mut stack = Vec::<char>::new();
+    for (col, c) in s.chars().enumerate() {
+        let make_err = |want: &'static str| -> Result<Vec<char>, ChunkParseError> {
+            Err(ChunkParseError {
+                line: lineno,
+                col: col,
+                got: c,
+                want: want,
+            })
+        };
+        let open = match c {
+            '<' => Some('>'),
+            '(' => Some(')'),
+            '[' => Some(']'),
+            '{' => Some('}'),
+            _ => None,
+        };
+        if let Some(want) = open {
+            stack.push(want);
+            continue;
+        }
+        match stack.pop() {
+            Some(want) if c == want => (),
+            Some(_) => return make_err("matching closing character or open character"),
+            None => return make_err("open character"),
+        }
+    }
+    stack.reverse();
+    Ok(stack)
+}
+
+#[derive(Debug)]
+struct ChunkParseError {
+    line: usize,
+    col: usize,
+    got: char,
+    want: &'static str,
+}
+
+impl Display for ChunkParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{}: expected {} but found '{}'",
+            self.line, self.col, self.want, self.got
+        )
+    }
+}
+
+impl Error for ChunkParseError {
+    fn description(&self) -> &str {
+        "unexpected character"
     }
 }
 
