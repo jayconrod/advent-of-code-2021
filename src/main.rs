@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::env;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
+use std::fmt::Formatter;
 use std::fs;
+use std::mem;
 use std::process;
 use std::str::FromStr;
 
@@ -33,6 +37,10 @@ fn main() {
         "9_2" => puzzle9_2,
         "10_1" => puzzle10_1,
         "10_2" => puzzle10_2,
+        "11_1" => puzzle11_1,
+        "11_2" => puzzle11_2,
+        "12_1" => puzzle12_1,
+        "12_2" => puzzle12_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -1125,6 +1133,301 @@ impl Error for ChunkParseError {
     fn description(&self) -> &str {
         "unexpected character"
     }
+}
+
+fn puzzle11_1(input: &str) {
+    let mut om = input.trim().parse::<OctopusMap>().unwrap();
+    let n = 100;
+    for _ in 0..n {
+        om.step();
+    }
+    println!("om.flash_count {}", om.flash_count)
+}
+
+fn puzzle11_2(input: &str) {
+    let mut om = input.trim().parse::<OctopusMap>().unwrap();
+    let mut n = 0;
+    while !om.all_flashed() {
+        om.step();
+        n += 1;
+    }
+    println!("n {}", n);
+}
+
+struct OctopusMap {
+    energies: Vec<u64>,
+    size_x: usize,
+    size_y: usize,
+    flash_count: u64,
+}
+
+impl OctopusMap {
+    fn step(&mut self) {
+        // Increase energy.
+        let mut flashers = Vec::<(usize, usize)>::new();
+        for y in 0..self.size_y {
+            for x in 0..self.size_y {
+                let i = y * self.size_x + x;
+                self.energies[i] += 1;
+                if self.energies[i] == 10 {
+                    flashers.push((x, y));
+                }
+            }
+        }
+
+        // Flashers propagate energy to neighbors, maybe making them flash.
+        // Stop when there are no new flashers.
+        let mut prev_flashers = Vec::<(usize, usize)>::new();
+        while flashers.len() > 0 {
+            self.flash_count += flashers.len() as u64;
+            mem::swap(&mut flashers, &mut prev_flashers);
+            let mut neighbor = |x, y| {
+                let i = y * self.size_x + x;
+                if self.energies[i] == 10 {
+                    return;
+                }
+                self.energies[i] += 1;
+                if self.energies[i] == 10 {
+                    flashers.push((x, y))
+                }
+            };
+            for (x, y) in &prev_flashers {
+                let (x, y) = (*x, *y);
+                let top = y == 0;
+                let left = x == 0;
+                let bottom = y == self.size_y - 1;
+                let right = x == self.size_x - 1;
+                if top && left {
+                    neighbor(x, y + 1);
+                    neighbor(x + 1, y + 1);
+                    neighbor(x + 1, y);
+                } else if bottom && left {
+                    neighbor(x + 1, y);
+                    neighbor(x + 1, y - 1);
+                    neighbor(x, y - 1);
+                } else if bottom && right {
+                    neighbor(x, y - 1);
+                    neighbor(x - 1, y - 1);
+                    neighbor(x - 1, y);
+                } else if top && right {
+                    neighbor(x - 1, y);
+                    neighbor(x - 1, y + 1);
+                    neighbor(x, y + 1);
+                } else if top {
+                    neighbor(x - 1, y);
+                    neighbor(x - 1, y + 1);
+                    neighbor(x, y + 1);
+                    neighbor(x + 1, y + 1);
+                    neighbor(x + 1, y);
+                } else if left {
+                    neighbor(x, y - 1);
+                    neighbor(x, y + 1);
+                    neighbor(x + 1, y + 1);
+                    neighbor(x + 1, y);
+                    neighbor(x + 1, y - 1);
+                } else if bottom {
+                    neighbor(x, y - 1);
+                    neighbor(x - 1, y - 1);
+                    neighbor(x - 1, y);
+                    neighbor(x + 1, y);
+                    neighbor(x + 1, y - 1);
+                } else if right {
+                    neighbor(x, y - 1);
+                    neighbor(x - 1, y - 1);
+                    neighbor(x - 1, y);
+                    neighbor(x - 1, y + 1);
+                    neighbor(x, y + 1);
+                } else {
+                    neighbor(x, y - 1);
+                    neighbor(x - 1, y - 1);
+                    neighbor(x - 1, y);
+                    neighbor(x - 1, y + 1);
+                    neighbor(x, y + 1);
+                    neighbor(x + 1, y + 1);
+                    neighbor(x + 1, y);
+                    neighbor(x + 1, y - 1);
+                }
+            }
+            prev_flashers.resize(0, (0, 0));
+        }
+
+        // Reset flashers' energy to zero.
+        for e in self.energies.iter_mut() {
+            if *e == 10 {
+                *e = 0;
+            }
+        }
+    }
+
+    fn all_flashed(&self) -> bool {
+        self.energies.iter().all(|&e| e == 0)
+    }
+}
+
+impl FromStr for OctopusMap {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut om = OctopusMap {
+            size_x: 0,
+            size_y: 0,
+            energies: Vec::<u64>::new(),
+            flash_count: 0,
+        };
+        for line in s.trim().lines() {
+            if om.size_x == 0 {
+                om.size_x = line.len();
+            }
+            om.size_y += 1;
+            for c in line.chars() {
+                if c < '0' || '9' < c {
+                    return Err(format!("invalid octopus map height: {}", c));
+                }
+                om.energies.push(c as u64 - '0' as u64)
+            }
+        }
+        Ok(om)
+    }
+}
+
+impl Display for OctopusMap {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut s = String::new();
+        s.reserve(self.size_x * self.size_y + self.size_y - 1);
+        let mut sep = "";
+        for y in 0..self.size_y {
+            s.push_str(sep);
+            sep = "\n";
+            for x in 0..self.size_x {
+                let i = y * self.size_y + x;
+                let c = (self.energies[i] as u8 + b'0') as char;
+                s.push(c);
+            }
+        }
+        f.write_str(&s[..])
+    }
+}
+
+fn puzzle12_1(input: &str) {
+    let cm = input.parse::<CaveMap>().unwrap();
+    let path_count = cm.count_paths("start", "end", false);
+    println!("path_count {}", path_count);
+}
+
+fn puzzle12_2(input: &str) {
+    let cm = input.parse::<CaveMap>().unwrap();
+    let path_count = cm.count_paths("start", "end", true);
+    println!("path_count {}", path_count);
+}
+
+struct CaveMap {
+    name_to_index: HashMap<String, usize>,
+    caves: Vec<Cave>,
+}
+
+impl CaveMap {
+    fn new() -> CaveMap {
+        CaveMap {
+            name_to_index: HashMap::<String, usize>::new(),
+            caves: Vec::<Cave>::new(),
+        }
+    }
+
+    fn ensure_cave(&mut self, name: &str) -> usize {
+        match self.name_to_index.get(name) {
+            Some(ix) => *ix,
+            None => {
+                let ix = self.caves.len();
+                let is_small = name.starts_with(|c: char| c.is_lowercase());
+                self.name_to_index.insert(String::from(name), ix);
+                self.caves.push(Cave {
+                    is_small: is_small,
+                    neighbors: Vec::<usize>::new(),
+                });
+                ix
+            }
+        }
+    }
+
+    fn ensure_passage(&mut self, from: &str, to: &str) {
+        let from_ix = self.ensure_cave(from);
+        let to_ix = self.ensure_cave(to);
+        if self.caves[from_ix].neighbors.contains(&to_ix) {
+            return;
+        }
+        self.caves[from_ix].neighbors.push(to_ix);
+        self.caves[to_ix].neighbors.push(from_ix);
+    }
+
+    fn count_paths(&self, from: &str, to: &str, can_visit_twice: bool) -> usize {
+        let from_index = *self
+            .name_to_index
+            .get(from)
+            .expect("'from' vertex not found");
+        let to_index = *self.name_to_index.get(to).expect("'to' index not found");
+        let mut path = CavePath { caves: vec![] };
+        let mut paths = HashSet::<CavePath>::new();
+
+        fn visit(
+            cm: &CaveMap,
+            i: usize,
+            start: usize,
+            end: usize,
+            can_visit_twice: bool,
+            path: &mut CavePath,
+            paths: &mut HashSet<CavePath>,
+        ) {
+            path.caves.push(i);
+            if i == end {
+                paths.insert(path.clone());
+            } else {
+                for &next in &cm.caves[i].neighbors {
+                    if !cm.caves[next].is_small || !path.caves.contains(&next) {
+                        visit(cm, next, start, end, can_visit_twice, path, paths);
+                    } else if can_visit_twice && next != start && next != end {
+                        visit(cm, next, start, end, false, path, paths);
+                    }
+                }
+            }
+            path.caves.pop();
+        }
+
+        visit(
+            self,
+            from_index,
+            from_index,
+            to_index,
+            can_visit_twice,
+            &mut path,
+            &mut paths,
+        );
+        paths.len()
+    }
+}
+
+impl FromStr for CaveMap {
+    type Err = String;
+    fn from_str<'b>(s: &'b str) -> Result<Self, Self::Err> {
+        let mut cm = CaveMap::new();
+        for (i, line) in s.lines().enumerate() {
+            let (from, to) = match line.find("-") {
+                Some(i) => (&line[..i], &line[i + 1..]),
+                None => return Err(format!("line {}: '-' not found", i)),
+            };
+            cm.ensure_passage(from, to);
+        }
+        Ok(cm)
+    }
+}
+
+struct Cave {
+    is_small: bool,
+    neighbors: Vec<usize>,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+struct CavePath {
+    caves: Vec<usize>,
 }
 
 fn parse_space_separated<T: std::str::FromStr>(s: &str) -> Result<Vec<T>, String> {
