@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
@@ -8,6 +9,7 @@ use std::fmt::Formatter;
 use std::fs;
 use std::mem;
 use std::process;
+use std::str::from_utf8;
 use std::str::FromStr;
 
 fn main() {
@@ -41,6 +43,8 @@ fn main() {
         "11_2" => puzzle11_2,
         "12_1" => puzzle12_1,
         "12_2" => puzzle12_2,
+        "13_1" => puzzle13_1,
+        "13_2" => puzzle13_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -1428,6 +1432,141 @@ struct Cave {
 #[derive(Clone, Eq, PartialEq, Hash)]
 struct CavePath {
     caves: Vec<usize>,
+}
+
+fn puzzle13_1(input: &str) {
+    let mut paper = input.trim().parse::<TransparentPaper>().unwrap();
+    paper = paper.fold_n(1);
+    println!("paper.dots.len() {}", paper.dots.len());
+}
+
+fn puzzle13_2(input: &str) {
+    let mut paper = input.trim().parse::<TransparentPaper>().unwrap();
+    paper = paper.fold_n(paper.folds.len());
+    println!("{}", paper);
+}
+
+struct TransparentPaper {
+    dots: Vec<(usize, usize)>,
+    folds: Vec<TransparentPaperFold>,
+}
+
+impl TransparentPaper {
+    fn fold_n(&self, n: usize) -> TransparentPaper {
+        let mut transformed_dots = Vec::<(usize, usize)>::new();
+        for dot in &self.dots {
+            let mut transformed_dot = *dot;
+            for i in 0..n {
+                let fold = self.folds[i];
+                transformed_dot = fold.transform(transformed_dot);
+            }
+            transformed_dots.push(transformed_dot);
+        }
+
+        transformed_dots.sort_by(|(x1, y1), (x2, y2)| match y1.cmp(y2) {
+            Ordering::Equal => x1.cmp(x2),
+            c => c,
+        });
+        transformed_dots.dedup();
+
+        let mut remaining_folds = Vec::<TransparentPaperFold>::new();
+        remaining_folds.extend_from_slice(&self.folds[n..]);
+
+        TransparentPaper {
+            dots: transformed_dots,
+            folds: remaining_folds,
+        }
+    }
+}
+
+impl fmt::Display for TransparentPaper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let size_x = self.dots.iter().fold(0, |s, (x, _)| s.max(*x)) + 1;
+        let size_y = self.dots.iter().fold(0, |s, (_, y)| s.max(*y)) + 1;
+        let mut buf = Vec::<u8>::new();
+        buf.reserve((size_x + 1) * size_y);
+        for _ in 0..size_y {
+            for _ in 0..size_x {
+                buf.push(b'.');
+            }
+            buf.push(b'\n');
+        }
+        for (x, y) in &self.dots {
+            buf[y * (size_x + 1) + x] = b'#';
+        }
+        f.write_str(from_utf8(&buf[..]).unwrap())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TransparentPaperFold {
+    X(usize),
+    Y(usize),
+}
+
+impl TransparentPaperFold {
+    fn transform(&self, (x, y): (usize, usize)) -> (usize, usize) {
+        match self {
+            TransparentPaperFold::X(axis) if x > *axis => (axis - (x - axis), y),
+            TransparentPaperFold::Y(axis) if y > *axis => (x, (axis - (y - axis))),
+            _ => (x, y),
+        }
+    }
+}
+
+impl FromStr for TransparentPaper {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parse_dot = |s: &str| -> Result<(usize, usize), Self::Err> {
+            let i = s.find(",").ok_or("expected ','")?;
+            let x = s[..i].parse::<usize>().map_err(|_| "expected integer")?;
+            let y = s[i + 1..]
+                .parse::<usize>()
+                .map_err(|_| "expected integer")?;
+            Ok((x, y))
+        };
+
+        let parse_fold = |s: &str| -> Result<TransparentPaperFold, Self::Err> {
+            if s.starts_with("fold along x=") {
+                let axis = s["fold along x=".len()..]
+                    .parse::<usize>()
+                    .map_err(|_| "expected integer")?;
+                Ok(TransparentPaperFold::X(axis))
+            } else if s.starts_with("fold along y=") {
+                let axis = s["fold along y=".len()..]
+                    .parse::<usize>()
+                    .map_err(|_| "expected integer")?;
+                Ok(TransparentPaperFold::Y(axis))
+            } else {
+                Err(String::from("expected fold"))
+            }
+        };
+
+        let mut dots = Vec::<(usize, usize)>::new();
+        let mut folds = Vec::<TransparentPaperFold>::new();
+        let mut line_iter = s.trim().lines();
+        loop {
+            match line_iter.next() {
+                Some(line) if line != "" => {
+                    dots.push(parse_dot(line)?);
+                }
+                _ => break,
+            }
+        }
+
+        loop {
+            match line_iter.next() {
+                Some(line) if line != "" => {
+                    folds.push(parse_fold(line)?);
+                }
+                _ => break,
+            }
+        }
+        Ok(TransparentPaper {
+            dots: dots,
+            folds: folds,
+        })
+    }
 }
 
 fn parse_space_separated<T: std::str::FromStr>(s: &str) -> Result<Vec<T>, String> {
