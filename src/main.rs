@@ -45,6 +45,8 @@ fn main() {
         "12_2" => puzzle12_2,
         "13_1" => puzzle13_1,
         "13_2" => puzzle13_2,
+        "14_1" => puzzle14_1,
+        "14_2" => puzzle14_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -1565,6 +1567,147 @@ impl FromStr for TransparentPaper {
         Ok(TransparentPaper {
             dots: dots,
             folds: folds,
+        })
+    }
+}
+
+fn puzzle14_1(input: &str) {
+    let mut p = input.trim().parse::<Polymer>().unwrap();
+    let n = 10;
+    p.step(n);
+    let mut hist = HashMap::<u8, usize>::new();
+    p.poly.iter().for_each(|e| {
+        match hist.get_mut(e) {
+            Some(n) => *n += 1,
+            None => {
+                hist.insert(*e, 1);
+            }
+        };
+    });
+    let most_common = hist.values().max().unwrap();
+    let least_common = hist.values().min().unwrap();
+    let diff = most_common - least_common;
+
+    println!("n {}, p.poly.len() {}, diff {}", n, p.poly.len(), diff);
+}
+
+fn puzzle14_2(input: &str) {
+    let p = input.trim().parse::<Polymer>().unwrap();
+    let n = 40;
+    let hist = p.hist(n);
+    let most_common = hist.iter().max().unwrap();
+    let least_common = hist.iter().filter(|n| *n > &0).min().unwrap();
+    let diff = most_common - least_common;
+
+    println!("n {}, diff {}", n, diff);
+}
+
+struct Polymer {
+    poly: Vec<u8>,
+    rules: Vec<u8>,
+}
+
+impl Polymer {
+    fn step(&mut self, n: usize) {
+        let mut next = Vec::<u8>::new();
+        for _ in 0..n {
+            next.resize(0, 0);
+            next.push(self.poly[0]);
+            for i in 0..self.poly.len() - 1 {
+                let (l, r) = (self.poly[i], self.poly[i + 1]);
+                let ix = Self::rule_index(l, r);
+                let b = self.rules[ix];
+                if b != 0 {
+                    next.push(b);
+                }
+                next.push(r);
+            }
+            mem::swap(&mut self.poly, &mut next);
+        }
+    }
+
+    fn hist(&self, n: usize) -> [usize; 26] {
+        fn pair_hist(
+            l: u8,
+            r: u8,
+            n: usize,
+            rules: &[u8],
+            mem: &mut HashMap<(u8, u8, usize), [usize; 26]>,
+        ) -> [usize; 26] {
+            let key = (l, r, n);
+            if let Some(&hist) = mem.get(&key) {
+                return hist;
+            }
+            let b = rules[Polymer::rule_index(l, r)];
+            if n == 0 || b == 0 {
+                let hist = [0; 26];
+                mem.insert(key, hist);
+                return hist;
+            }
+            let lhist = pair_hist(l, b, n - 1, rules, mem);
+            let rhist = pair_hist(b, r, n - 1, rules, mem);
+            let mut hist = [0; 26];
+            for i in 0..26 {
+                hist[i] = lhist[i] + rhist[i];
+            }
+            hist[(b - b'A') as usize] += 1;
+            mem.insert(key, hist);
+            hist
+        }
+
+        let mut mem = HashMap::<(u8, u8, usize), [usize; 26]>::new();
+        let mut hist = [0usize; 26];
+        for i in 0..self.poly.len() - 1 {
+            let (l, r) = (self.poly[i], self.poly[i + 1]);
+            hist[(l - b'A') as usize] += 1;
+            let phist = pair_hist(l, r, n, &self.rules[..], &mut mem);
+            for j in 0..26 {
+                hist[j] += phist[j];
+            }
+        }
+        hist[(self.poly[self.poly.len() - 1] - b'A') as usize] += 1;
+        hist
+    }
+
+    fn rule_index(l: u8, r: u8) -> usize {
+        ((l - b'A') as usize) * 26 + (r - b'A') as usize
+    }
+}
+
+impl FromStr for Polymer {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parse_rule = |line: &str| {
+            match line.find(" -> ") {
+                Some(2) if line.len() == 7 => (),
+                _ => return Err(String::from("expected rule of the form AB -> C")),
+            };
+            let bytes = line.as_bytes();
+            Ok((bytes[0], bytes[1], bytes[6]))
+        };
+
+        let mut line_iter = s.lines();
+        let tpl = match line_iter.next() {
+            Some(tpl_str) => {
+                let mut tpl = Vec::<u8>::new();
+                tpl.extend_from_slice(tpl_str.as_bytes());
+                tpl
+            }
+            None => return Err(String::from("expected template on first line")),
+        };
+        match line_iter.next() {
+            Some("") => (),
+            _ => return Err(String::from("expected blank line after template")),
+        };
+        let mut rules = Vec::<u8>::new();
+        rules.resize(26 * 26, 0);
+        while let Some(line) = line_iter.next() {
+            let (l, r, b) = parse_rule(line)?;
+            rules[Self::rule_index(l, r)] = b;
+        }
+        Ok(Polymer {
+            poly: tpl,
+            rules: rules,
         })
     }
 }
