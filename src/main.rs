@@ -50,6 +50,8 @@ fn main() {
         "14_2" => puzzle14_2,
         "15_1" => puzzle15_1,
         "15_2" => puzzle15_2,
+        "16_1" => puzzle16_1,
+        "16_2" => puzzle16_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -1862,6 +1864,224 @@ impl FromStr for ChitonMap {
             }
         }
         Ok(cm)
+    }
+}
+
+fn puzzle16_1(input: &str) {
+    let bytes = decode_hex(input.trim()).unwrap();
+    let br = BitReader::new(&bytes[..]);
+    let mut pr = PacketReader::new(br);
+
+    let mut packets = Vec::<Packet>::new();
+    while let Some(p) = pr.next() {
+        packets.push(p);
+    }
+    fn visit(p: &Packet) -> u64 {
+        let mut version_sum = p.version as u64;
+        if let PacketBody::Operator { op: _, subpackets } = &p.body {
+            for sp in subpackets {
+                version_sum += visit(&sp);
+            }
+        }
+        version_sum
+    }
+    let version_sum: u64 = packets.iter().map(visit).sum();
+    println!("version_sum {}", version_sum);
+}
+
+fn puzzle16_2(input: &str) {
+    let bytes = decode_hex(input.trim()).unwrap();
+    let br = BitReader::new(&bytes[..]);
+    let mut pr = PacketReader::new(br);
+    let p = pr.next().unwrap();
+    assert!(pr.next().is_none());
+    let n = p.eval();
+    println!("n {}", n);
+}
+
+fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
+    fn decode_digit(c: char) -> Result<u8, String> {
+        if '0' <= c && c <= '9' {
+            Ok(c as u8 - b'0')
+        } else if 'A' <= c && c <= 'F' {
+            Ok(c as u8 - b'A' + 10)
+        } else if 'a' <= c && c <= 'f' {
+            Ok(c as u8 - b'a' + 10)
+        } else {
+            Err(format!("not a hex digit: '{}'", c))
+        }
+    }
+    let mut bytes = Vec::<u8>::with_capacity(s.len() / 2 + s.len() % 2);
+    let mut hi: Option<u8> = None;
+    for c in s.chars() {
+        match hi {
+            None => {
+                hi = Some(decode_digit(c)?);
+            }
+            Some(hi_bits) => {
+                let lo_bits = decode_digit(c)?;
+                let b = hi_bits << 4 | lo_bits;
+                bytes.push(b);
+                hi = None;
+            }
+        }
+    }
+    if let Some(bits) = hi {
+        bytes.push(bits << 4);
+    }
+    Ok(bytes)
+}
+
+struct BitReader<'a> {
+    bytes: &'a [u8],
+    bits_consumed: usize,
+}
+
+impl<'a> BitReader<'a> {
+    fn new(bytes: &'a [u8]) -> BitReader<'a> {
+        BitReader {
+            bytes: bytes,
+            bits_consumed: 0,
+        }
+    }
+
+    fn read(&mut self, mut nbits: usize) -> usize {
+        assert!(self.bits_consumed + nbits <= self.bytes.len() * 8);
+        assert!(nbits <= mem::size_of::<usize>() * 8);
+        let mut bits: usize = 0;
+        while nbits > 0 {
+            let nbits_from_this_byte = nbits.min(8 - self.bits_consumed % 8);
+            let shift = 8 - nbits_from_this_byte - self.bits_consumed % 8;
+            let mask = (1 << nbits_from_this_byte) - 1;
+            let bits_from_this_byte = (self.bytes[self.bits_consumed / 8] as usize >> shift) & mask;
+            bits = (bits << nbits_from_this_byte) | bits_from_this_byte as usize;
+            nbits -= nbits_from_this_byte;
+            self.bits_consumed += nbits_from_this_byte;
+        }
+        bits
+    }
+
+    fn remaining(&self) -> usize {
+        self.bytes.len() * 8 - self.bits_consumed
+    }
+}
+
+struct Packet {
+    version: u8,
+    body: PacketBody,
+}
+
+enum PacketBody {
+    Literal(usize),
+    Operator {
+        op: PacketOp,
+        subpackets: Vec<Packet>,
+    },
+}
+
+enum PacketOp {
+    Sum,
+    Product,
+    Minimum,
+    Maximum,
+    GreaterThan,
+    LessThan,
+    EqualTo,
+}
+
+impl Packet {
+    fn eval(&self) -> usize {
+        match &self.body {
+            PacketBody::Literal(n) => *n,
+            PacketBody::Operator { op, subpackets } => {
+                let mut values = subpackets.iter().map(|p| p.eval());
+                match op {
+                    PacketOp::Sum => values.sum(),
+                    PacketOp::Product => values.product(),
+                    PacketOp::Minimum => values.min().unwrap(),
+                    PacketOp::Maximum => values.max().unwrap(),
+                    _ => {
+                        let x = values.next().unwrap();
+                        let y = values.next().unwrap();
+                        assert!(values.next().is_none());
+                        (match op {
+                            PacketOp::GreaterThan => x > y,
+                            PacketOp::LessThan => x < y,
+                            _ => x == y,
+                        }) as usize
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct PacketReader<'a> {
+    r: BitReader<'a>,
+}
+
+impl<'a> PacketReader<'a> {
+    fn new(r: BitReader) -> PacketReader {
+        PacketReader { r: r }
+    }
+
+    fn next(&mut self) -> Option<Packet> {
+        if self.r.remaining() < 6 {
+            return None;
+        }
+        let version = self.r.read(3) as u8;
+        let type_id = self.r.read(3) as u8;
+        if version == 0 && type_id == 0 && self.r.remaining() <= 2 {
+            // zeroes padding end of stream.
+            return None;
+        }
+        let body = match type_id {
+            4 => {
+                let mut n = 0;
+                let mut width = 0;
+                loop {
+                    let next = self.r.read(5);
+                    width += 4;
+                    assert!(width <= mem::size_of::<usize>() * 8);
+                    n = (n << 4) | (next & 0xF);
+                    if (next & 0x10) == 0 {
+                        break;
+                    }
+                }
+                PacketBody::Literal(n)
+            }
+            _ => {
+                let op = match type_id {
+                    0 => PacketOp::Sum,
+                    1 => PacketOp::Product,
+                    2 => PacketOp::Minimum,
+                    3 => PacketOp::Maximum,
+                    5 => PacketOp::GreaterThan,
+                    6 => PacketOp::LessThan,
+                    _ => PacketOp::EqualTo,
+                };
+                let length_type_id = self.r.read(1);
+                let subpackets = if length_type_id == 0 {
+                    let subpacket_length_in_bits = self.r.read(15);
+                    let end = self.r.bits_consumed + subpacket_length_in_bits;
+                    let mut subpackets = Vec::<Packet>::new();
+                    while self.r.bits_consumed < end {
+                        subpackets.push(self.next()?);
+                    }
+                    assert_eq!(self.r.bits_consumed, end);
+                    subpackets
+                } else {
+                    let subpacket_count = self.r.read(11);
+                    let mut subpackets = Vec::<Packet>::with_capacity(subpacket_count);
+                    for _ in 0..subpacket_count {
+                        subpackets.push(self.next()?);
+                    }
+                    subpackets
+                };
+                PacketBody::Operator { op, subpackets }
+            }
+        };
+        Some(Packet { version, body })
     }
 }
 
