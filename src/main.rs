@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
@@ -47,6 +48,8 @@ fn main() {
         "13_2" => puzzle13_2,
         "14_1" => puzzle14_1,
         "14_2" => puzzle14_2,
+        "15_1" => puzzle15_1,
+        "15_2" => puzzle15_2,
         _ => {
             eprint!("no such puzzle: {}\n", name);
             process::exit(1);
@@ -1709,6 +1712,156 @@ impl FromStr for Polymer {
             poly: tpl,
             rules: rules,
         })
+    }
+}
+
+fn puzzle15_1(input: &str) {
+    let cm = input.trim().parse::<ChitonMap>().unwrap();
+    let lowest_risk = cm.lowest_risk();
+    println!("lowest_risk {}", lowest_risk);
+}
+
+fn puzzle15_2(input: &str) {
+    let cm = input.trim().parse::<ChitonMap>().unwrap().expand();
+    let lowest_risk = cm.lowest_risk();
+    println!("lowest_risk {}", lowest_risk);
+}
+
+struct ChitonMap {
+    size_x: usize,
+    size_y: usize,
+    risks: Vec<usize>,
+}
+
+impl ChitonMap {
+    fn expand(&self) -> ChitonMap {
+        let exp_size_x = self.size_x * 5;
+        let exp_size_y = self.size_y * 5;
+        let mut exp_risks = Vec::<usize>::new();
+        exp_risks.resize(exp_size_x * exp_size_y, 0);
+        let ix = |x, y| y * self.size_x + x;
+        let eix = |tx, ty, x, y| (ty * self.size_y + y) * exp_size_x + tx * self.size_x + x;
+
+        for ty in 0..5 {
+            for tx in 0..5 {
+                for y in 0..self.size_x {
+                    for x in 0..self.size_y {
+                        let d = tx + ty;
+                        let mut r = self.risks[ix(x, y)] + d;
+                        if r > 9 {
+                            r -= 9;
+                        }
+                        exp_risks[eix(tx, ty, x, y)] = r;
+                    }
+                }
+            }
+        }
+        ChitonMap {
+            size_x: exp_size_x,
+            size_y: exp_size_y,
+            risks: exp_risks,
+        }
+    }
+
+    fn lowest_risk(&self) -> usize {
+        // Dijkstra's algorithm, heavily borrowed from
+        // https://doc.rust-lang.org/std/collections/binary_heap/index.html
+        let ix = |x, y| self.size_x * y + x;
+        let mut prev = Vec::<(usize, usize)>::new();
+        prev.resize(self.size_x * self.size_y, (!0, !0));
+        let mut total_risk = Vec::<usize>::new();
+        total_risk.resize(self.size_x * self.size_y, !0);
+
+        #[derive(Eq, PartialEq)]
+        struct State {
+            x: usize,
+            y: usize,
+            total_risk: usize,
+        }
+        impl Ord for State {
+            fn cmp(&self, other: &Self) -> Ordering {
+                other
+                    .total_risk
+                    .cmp(&self.total_risk)
+                    .then_with(|| self.y.cmp(&other.y))
+                    .then_with(|| self.x.cmp(&other.x))
+            }
+        }
+        impl PartialOrd for State {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut dist = Vec::<usize>::new();
+        dist.resize(self.size_x * self.size_y, usize::MAX);
+        dist[ix(0, 0)] = 0;
+        let mut heap = BinaryHeap::<State>::new();
+        heap.push(State {
+            x: 0,
+            y: 0,
+            total_risk: 0,
+        });
+
+        while let Some(State { x, y, total_risk }) = heap.pop() {
+            let end_x = x == self.size_x - 1;
+            let end_y = y == self.size_y - 1;
+            if end_x && end_y {
+                return total_risk;
+            }
+            if total_risk > dist[ix(x, y)] {
+                continue;
+            }
+            let mut visit_edge = |ex, ey| {
+                let next = State {
+                    x: ex,
+                    y: ey,
+                    total_risk: total_risk + self.risks[ix(ex, ey)],
+                };
+                if next.total_risk < dist[ix(ex, ey)] {
+                    dist[ix(ex, ey)] = next.total_risk;
+                    heap.push(next);
+                }
+            };
+            if y > 0 {
+                visit_edge(x, y - 1);
+            }
+            if x > 0 {
+                visit_edge(x - 1, y);
+            }
+            if !end_y {
+                visit_edge(x, y + 1);
+            }
+            if !end_x {
+                visit_edge(x + 1, y);
+            }
+        }
+
+        unreachable!();
+    }
+}
+
+impl FromStr for ChitonMap {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut cm = ChitonMap {
+            size_x: 0,
+            size_y: 0,
+            risks: Vec::<usize>::new(),
+        };
+        for line in s.trim().lines() {
+            if cm.size_x == 0 {
+                cm.size_x = line.len();
+            }
+            cm.size_y += 1;
+            for c in line.chars() {
+                if c < '0' || '9' < c {
+                    return Err(format!("invalid heighmap height: {}", c));
+                }
+                cm.risks.push(c as usize - '0' as usize)
+            }
+        }
+        Ok(cm)
     }
 }
 
